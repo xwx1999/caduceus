@@ -6,17 +6,17 @@ import json
 import os
 import random
 import time
-from functools import wraps
-from typing import Callable, List, Sequence
+from functools import wraps #从functools模块导入wraps装饰器，它通常用于包装函数，以便在不修改原函数的情况下添加额外功能。
+from typing import Callable, List, Sequence #从typing模块导入类型注解，这些注解用于指示函数参数或返回值的类型，以提高代码的可读性和可维护性。
 
 import fsspec
 import hydra
 import pytorch_lightning as pl
 import torch
-import wandb
-from omegaconf import OmegaConf
-from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning.utilities import rank_zero_only, rank_zero_warn
+import wandb #导入wandb库，它是一个用于实验跟踪、可视化和管理的平台。
+from omegaconf import OmegaConf #从omegaconf库导入OmegaConf类，它提供了一种灵活的方式来处理配置文件。
+from pytorch_lightning.loggers import WandbLogger #从pytorch_lightning库中导入WandbLogger，这是一个日志记录器，用于将训练过程中的信息记录到wandb平台。
+from pytorch_lightning.utilities import rank_zero_only, rank_zero_warn #从pytorch_lightning库中导入rank_zero_only和rank_zero_warn装饰器，这些装饰器用于确保在多GPU训练时，只有主进程（rank 0）执行特定的操作或打印日志。
 
 import src.models.nn.utils as U
 import src.utils as utils
@@ -24,7 +24,7 @@ import src.utils.train
 from src.dataloaders import SequenceDataset  # TODO make registry
 from src.tasks import decoders, encoders, tasks
 from src.utils import registry
-from src.utils.optim_groups import add_optimizer_hooks
+from src.utils.optim_groups import add_optimizer_hooks #从项目内部的src.utils.optim_groups模块导入add_optimizer_hooks函数，这个函数可能用于添加优化器钩子，以便在训练过程中进行特定的操作。
 
 log = src.utils.train.get_logger(__name__)
 
@@ -40,6 +40,10 @@ OmegaConf.register_new_resolver('min', lambda x, y: min([x, y]))
 
 
 # Lots of annoying hacks to get WandbLogger to continuously retry on failure
+'''
+DummyExperiment 类提供了一个不会执行任何实际操作的模拟实验对象，可以用于测试或开发环境中，其中实验对象的行为不是关注的重点。
+这个类的方法确保了无论对它进行何种操作，都不会引发异常，使得代码可以继续执行而不会受到干扰。
+'''
 class DummyExperiment:
     """Dummy experiment."""
 
@@ -56,7 +60,10 @@ class DummyExperiment:
     def __setitem__(self, *args, **kwargs) -> None:
         pass
 
-
+'''
+rank_zero_experiment 装饰器的作用是让传入的实验函数 fn 只在rank 0的进程中执行，而在其他进程中返回一个不执行任何操作的 
+DummyExperiment 对象。
+'''
 def rank_zero_experiment(fn: Callable) -> Callable:
     """Returns the real experiment on rank 0 and otherwise the DummyExperiment."""
 
@@ -70,7 +77,11 @@ def rank_zero_experiment(fn: Callable) -> Callable:
 
     return experiment
 
-
+'''
+这个 CustomWandbLogger 类的主要作用是提供一个更加健壮的 Wandb 日志记录器，
+它可以在分布式训练环境中正确地初始化和使用 Wandb，
+同时确保在非rank 0的进程中不会执行实际的 Wandb 操作。
+'''
 class CustomWandbLogger(WandbLogger):
 
     def __init__(self, *args, **kwargs):
@@ -127,6 +138,11 @@ class SequenceLightningModule(pl.LightningModule):
     def __init__(self, config):
         # Disable profiling executor. This reduces memory and increases speed.
         try:
+            '''
+            这两行代码尝试关闭PyTorch的JIT（即时编译）执行器和JIT模式的分析（profile）功能，
+            以减少内存使用并提高运行速度。如果在尝试设置时遇到AttributeError（即PyTorch版本不支持这些操作），
+            则不会执行任何操作。
+            '''
             torch._C._jit_set_profiling_executor(False)
             torch._C._jit_set_profiling_mode(False)
         except AttributeError:
@@ -137,6 +153,10 @@ class SequenceLightningModule(pl.LightningModule):
         self.save_hyperparameters(config, logger=False)
 
         # Dataset arguments
+        '''
+        SequenceDataset.registry是一个注册表，用于根据数据集名称获取相应的数据集类，并使用配置参数初始化。
+        通过配置参数来初始化数据集、模型组件和度量指标，并确保了一些初始化步骤只执行一次
+        '''
         self.dataset = SequenceDataset.registry[self.hparams.dataset._name_](
             **self.hparams.dataset
         )
@@ -157,6 +177,11 @@ class SequenceLightningModule(pl.LightningModule):
         self.val_loader_names, self.test_loader_names = None, None
 
     def setup(self, stage=None):
+        '''
+        整体来看，这段代码在setup方法中完成了模型、任务、编码器和解码器的实例化，并根据配置
+        更新了模型的超参数。它还处理了与模型初始化相关的一些特殊情况，例如检查点的加载问题和动态模型构建。
+        此外，它还提供了一些便利功能，例如在训练开始前动态构建模型，以及在多次训练时避免重复调用setup方法。
+        '''
         if not self.hparams.train.disable_dataset:
             self.dataset.setup()
 
@@ -239,6 +264,10 @@ class SequenceLightningModule(pl.LightningModule):
 
     def load_state_dict(self, state_dict, strict=False):
         if self.hparams.train.pretrained_model_state_hook['_name_'] is not None:
+            '''
+            如果配置中指定了一个预训练模型状态钩子（pretrained_model_state_hook），
+            则使用 utils.instantiate 方法实例化这个钩子，并将其应用于 state_dict。
+            '''
             model_state_hook = utils.instantiate(
                 registry.model_state_hook,
                 self.hparams.train.pretrained_model_state_hook.copy(),
@@ -253,6 +282,10 @@ class SequenceLightningModule(pl.LightningModule):
         return super().load_state_dict(state_dict, strict=strict)
 
     def _check_config(self):
+        '''
+        确保 hparams.train.state.mode 的值是预期的六个选项之一：None, "none", "null", "reset", "bptt", "tbptt"。
+        检查 n_context 和 n_context_eval 配置项是否为 None、整数且大于等于0。
+        '''
         assert self.hparams.train.state.mode in [None, "none", "null", "reset", "bptt", "tbptt"]
         assert (
                 (n := self.hparams.train.state.n_context) is None
@@ -266,16 +299,32 @@ class SequenceLightningModule(pl.LightningModule):
         )
 
     def _initialize_state(self):
+        '''
+        这个方法在模型设置和每个 epoch 开始时被调用，用于完全重置状态。
+        将 _state 和 _memory_chunks 属性设置为 None，清空模型的状态。
+        '''
         """Called at model setup and start of epoch to completely reset state"""
         self._state = None
         self._memory_chunks = []
 
     def _reset_state(self, batch, device=None):
+        '''
+        这个方法在需要构建默认状态时被调用，例如在 BPTT（Backpropagation Through Time）序列模型训练中。
+        如果没有提供 device，它将使用批次数据中第一个元素的设备。
+        使用模型的 default_state 方法来构建状态，并将其设置为 _state 属性。
+        '''
         """Called to construct default_state when necessary, e.g. during BPTT"""
         device = device or batch[0].device
         self._state = self.model.default_state(*batch[0].shape[:1], device=device)
 
     def _detach_state(self, state):
+        '''
+        这个方法用于从计算图中分离状态，这对于序列模型训练中避免梯度累积是必要的。
+        如果状态是 torch.Tensor，则调用 detach 方法。
+        如果状态是元组、列表或字典，递归地对其元素调用 _detach_state。
+        如果状态是 None，则直接返回 None。
+        如果状态是其他类型，则抛出 NotImplementedError 异常。
+        '''
         if isinstance(state, torch.Tensor):
             return state.detach()
         elif isinstance(state, tuple):
@@ -290,7 +339,15 @@ class SequenceLightningModule(pl.LightningModule):
             raise NotImplementedError
 
     def _process_state(self, batch, batch_idx, training=True):
-        """Handle logic for state context."""
+        """Handle logic for state context.
+        这个方法用于处理模型的状态上下文逻辑。它根据当前的训练状态（training）或评估状态（eval）来管理序列模型的上下文步骤。
+        key 根据训练或评估状态选择不同的上下文步骤键。
+        n_context 获取上下文步骤的数量。
+        如果上下文步骤为0且状态模式不是'tbptt'，则初始化状态。
+        如果状态模式为'reset'，则每隔n_context + 1个批次重置状态。
+        如果状态模式为'bptt'，则通过记忆块进行前向传播，并为下一步准备记忆块。
+        如果状态模式为'tbptt'，则根据重置标志处理批次。
+        """
         # Number of context steps
         key = "n_context" if training else "n_context_eval"
         n_context = self.hparams.train.state.get(key)
@@ -327,6 +384,10 @@ class SequenceLightningModule(pl.LightningModule):
         return self.task.forward(batch, self.encoder, self.model, self.decoder, self._state)
 
     def step(self, x_t):
+        '''
+        这个方法执行模型的单步更新。它首先通过编码器处理输入x_t，然后使用模型进行一步更新，
+        并更新状态。最后，它通过解码器进行一步更新并返回结果。
+        '''
         x_t, *_ = self.encoder(x_t)  # Potential edge case for encoders that expect (B, L, H)?
         x_t, state = self.model.step(x_t, state=self._state)
         self._state = state
@@ -335,6 +396,14 @@ class SequenceLightningModule(pl.LightningModule):
 
     def _shared_step(self, batch, batch_idx, prefix="train"):
         """Shared step logic between training, validation, and test"""
+        '''
+        这个方法是训练、验证和测试之间共享的步骤逻辑。
+        调用_process_state方法来处理状态。
+        执行前向传播并获取输出x和目标y以及权重w。
+        根据前缀（'train'或'val'）计算损失。
+        计算指标并将其添加到损失中。
+        根据前缀和配置，使用self.log_dict方法记录指标和torchmetrics。   
+        '''
         self._process_state(batch, batch_idx, training=(prefix == "train"))
         x, y, w = self.forward(batch)
 
@@ -403,6 +472,12 @@ class SequenceLightningModule(pl.LightningModule):
         super().test_epoch_end(outputs)
 
     def training_step(self, batch, batch_idx, dataloader_idx=0):
+        '''
+        定义单次训练步骤的行为，计算损失并记录到进度条和日志中。
+        使用 self._shared_step 方法执行实际的步骤逻辑。
+        记录损失和当前周期到日志，注意这里提到了一个已知的进度条与分布式数据并行 (DDP) 相关的 bug，该 bug 被追踪在 GitHub 的 pull request #9142。
+
+        '''
         loss = self._shared_step(batch, batch_idx, prefix="train")
 
         # Log the loss explicitly so that it shows up in WandB
