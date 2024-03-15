@@ -10,7 +10,26 @@ from transformers import PretrainedConfig
 class CaduceusConfig(PretrainedConfig):
     """Config that extends the original MambaConfig with params relevant to bi-directionality and RC equivariance."""
     model_type = "caduceus"
+    '''
+    d_model：模型中每个编码器和解码器层的特征维度。
+    n_layer：Transformer 模型中的层数。
+    vocab_size：词汇表的大小。
+    ssm_cfg：用于序列状态模型（SSM）的配置，这是一个可选的字典参数。
+    rms_norm：是否使用 RMS（Root Mean Square）归一化。
+    residual_in_fp32：是否在残差连接中使用 32 位浮点数（float）。
+    fused_add_norm：是否融合添加（add）和归一化（norm）操作。
+    pad_vocab_size_multiple：词汇表大小的填充倍数。 
 
+    norm_epsilon：用于层归一化的小数，以防止除以零。
+
+    initializer_cfg：用于初始化模型权重的配置，这是一个可选的字典参数。
+
+    bidirectional：是否启用双向编码器。
+    bidirectional_strategy：双向编码器的策略，例如 "add" 表示添加额外的反向层。
+    bidirectional_weight_tie：是否在双向编码器中绑定权重。
+    rcps：是否启用阅读器-比较器（RC）等价性。
+    complement_map：用于 RCPSEmbedding 和 RCPSLMHead 的互补映射，这是一个可选的字典参数
+    '''
     def __init__(
             self,
             # From original MambaConfig

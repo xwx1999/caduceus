@@ -513,6 +513,10 @@ class SequenceLightningModule(pl.LightningModule):
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
         # There's a bit of an annoying edge case with the first (0-th) epoch; it has to be excluded due to the initial
         # sanity check
+        '''
+        ema 变量是一个布尔值，它通过检查当前数据加载器的名称是否以 /ema 结尾，以及优化器是否已经执行了步骤（step），
+        来判断是否需要处理 EMA。EMA 是一种在训练过程中平滑模型权重的技术，有助于提高模型的泛化能力。
+        '''
         ema = (
                 self.val_loader_names[dataloader_idx].endswith("/ema")
                 and self.optimizers().optimizer.stepped
@@ -534,17 +538,28 @@ class SequenceLightningModule(pl.LightningModule):
 
     def configure_optimizers(self):
         # Set zero weight decay for some params
+        '''
+        首先，代码检查 self.hparams.train 中是否存在 optimizer_param_grouping 配置。
+        如果存在，它会使用 add_optimizer_hooks 方法对模型的参数进行分组，这通常用于对不同参数应用不同的优化器设置。
+        '''
         if 'optimizer_param_grouping' in self.hparams.train:
             add_optimizer_hooks(self.model, **self.hparams.train.optimizer_param_grouping)
 
         # Normal parameters
+        '''
+        然后，代码通过 utils.instantiate 方法和 self.hparams.optimizer 配置创建一个优化器实例。
+        self.hparams 是 HyperOpt 库的一部分，用于存储超参数。utils.instantiate 根据配置创建相应的优化器对象。
+        '''
         all_params = list(self.parameters())
         params = [p for p in all_params if not hasattr(p, "_optim")]
 
         optimizer = utils.instantiate(registry.optimizer, self.hparams.optimizer, params)
 
         del self.hparams.optimizer._name_
-
+        '''
+        代码遍历所有参数，并将具有特殊超参数的参数（通过 _optim 属性标记）添加到优化器的参数组中。
+        这些特殊参数组可能会有不同的学习率或权重衰减等设置。
+        '''
         # Add parameters with special hyperparameters
         hps = [getattr(p, "_optim") for p in all_params if hasattr(p, "_optim")]
         hps = [
@@ -560,6 +575,10 @@ class SequenceLightningModule(pl.LightningModule):
             )
 
         # Layer Decay
+        '''
+        如果 self.hparams.train.layer_decay['_name_'] 存在，代码将使用 utils.instantiate 创建一个层衰减对象。
+        层衰减是一种正则化技术，它根据模型层的深度对权重进行衰减。
+        '''
         if self.hparams.train.layer_decay['_name_'] is not None:
             get_num_layer = utils.instantiate(
                 registry.layer_decay,
@@ -568,6 +587,9 @@ class SequenceLightningModule(pl.LightningModule):
             )
 
             # Go through all parameters and get num layer
+            '''
+            代码遍历模型的所有命名参数，并使用 get_num_layer 函数为每个参数分配一个层级 ID。
+            '''
             layer_wise_groups = {}
             num_max_layers = 0
             for name, p in self.named_parameters():
@@ -587,6 +609,10 @@ class SequenceLightningModule(pl.LightningModule):
                     num_max_layers = layer_id
 
             # Update lr for each layer
+            '''
+            根据层级 ID，代码将参数分组，并为每个层级设置不同的学习率。
+            学习率根据层级深度进行调整，层级越深，学习率越低。
+            '''
             for layer_id, group in layer_wise_groups.items():
                 group['lr'] = self.hparams.optimizer.lr * (
                         self.hparams.train.layer_decay.decay ** (num_max_layers - layer_id))
@@ -597,9 +623,15 @@ class SequenceLightningModule(pl.LightningModule):
                 optimizer.add_param_group(group)
 
         # Print optimizer info for debugging
+        '''
+        代码使用 utils.train.log_optimizer 打印优化器的配置信息，这对于调试和记录训练过程很有帮助。
+        '''
         keys = set([k for hp in hps for k in hp.keys()])  # Special hparams
         utils.train.log_optimizer(log, optimizer, keys)
         # Configure scheduler
+        '''
+        如果 self.hparams 中存在 scheduler 配置，代码将创建一个学习率调度器实例，并将其添加到返回的字典中。
+        '''
         if "scheduler" not in self.hparams:
             return optimizer
         lr_scheduler = utils.instantiate(
@@ -613,12 +645,21 @@ class SequenceLightningModule(pl.LightningModule):
         }
         # See documentation for how to configure the return
         # https://pytorch-lightning.readthedocs.io/en/latest/api/pytorch_lightning.core.lightning.html#pytorch_lightning.core.lightning.LightningModule.configure_optimizers
+        '''
+        最后，方法返回一个包含优化器和调度器的列表。这是 PyTorch Lightning 框架的要求，以便在训练过程中使用这些配置。
+        '''
         return [optimizer], [scheduler]
 
     def train_dataloader(self):
         return self.dataset.train_dataloader(**self.hparams.loader)
 
     def _eval_dataloaders_names(self, loaders, prefix):
+        '''
+        这是一个私有辅助方法，用于处理数据加载器并将它们转换成名称和加载器的列表。它接受两个参数：loaders（数据加载器或加载器的字典/列表）和prefix（前缀字符串）。
+        如果loaders是一个字典，它将为每个键创建一个带有前缀的名称，并返回这些名称和对应的加载器值。
+        如果loaders是一个列表，它将为列表中的每个元素创建一个带有前缀和索引的名称，并返回这些名称和加载器。
+        如果loaders既不是字典也不是列表，它将返回一个只包含前缀的名称列表和一个包含加载器本身的单一元素列表。
+        '''
         """Process loaders into a list of names and loaders"""
         if utils.is_dict(loaders):
             return [
@@ -630,6 +671,12 @@ class SequenceLightningModule(pl.LightningModule):
             return [prefix], [loaders]
 
     def _eval_dataloaders(self):
+        '''
+        此方法用于获取验证和测试数据加载器。它首先调用self.dataset.val_dataloader和self.dataset.test_dataloader方法来创建验证和测试数据加载器，并使用self.hparams.loader中的超参数配置。
+        然后，它使用_eval_dataloaders_names方法为这些加载器创建名称。
+        如果启用了EMA（指数移动平均）训练，它将复制验证和测试加载器，并将"/ema"添加到它们的名称中。
+        接下来，它根据配置决定是否在评估时包含验证和测试加载器。如果self.hparams.train中的"remove_val_loader_in_eval"或"remove_test_loader_in_eval"设置为False，则相应的加载器将被包含在评估中。
+        '''
         # Return all val + test loaders
         val_loaders = self.dataset.val_dataloader(**self.hparams.loader)
         test_loaders = self.dataset.test_dataloader(**self.hparams.loader)
@@ -657,11 +704,18 @@ class SequenceLightningModule(pl.LightningModule):
         return eval_loader_names, eval_loaders
 
     def val_dataloader(self):
+        '''
+        此方法调用_eval_dataloaders方法来获取验证数据加载器的名称和实例，并将名称存储在self.val_loader_names中。然后，它返回加载器实例。
+        '''
         val_loader_names, val_loaders = self._eval_dataloaders()
         self.val_loader_names = val_loader_names
         return val_loaders
 
     def test_dataloader(self):
+        '''
+        此方法也调用_eval_dataloaders方法来获取测试数据加载器的名称和实例。
+        它将测试加载器的名称前缀设为"final/"，并将这些名称存储在self.test_loader_names中。然后，它返回加载器实例。
+        '''
         test_loader_names, test_loaders = self._eval_dataloaders()
         self.test_loader_names = ["final/" + name for name in test_loader_names]
         return test_loaders
@@ -669,11 +723,19 @@ class SequenceLightningModule(pl.LightningModule):
 
 # pytorch-lightning utils and entrypoint
 def create_trainer(config, **kwargs):
+    '''
+    回调列表 (callbacks)：创建一个空列表来存储训练过程中使用的回调（callbacks）。
+    记录器 (logger)：初始化为 None。记录器用于监控训练过程并记录重要的指标和信息。  
+    '''
     callbacks: List[pl.Callback] = []
     logger = None
 
     # WandB Logging
     if config.get("wandb") is not None:
+        '''
+        检查配置：如果配置中包含 wandb 部分，则导入 wandb 库并创建一个 CustomWandbLogger 实例。
+        这个记录器将配置对象转换为字典，并使用 wandb.Settings 来设置启动方法。
+        '''
         # Pass in wandb.init(config=) argument to get the nice 'x.y.0.z' hparams logged
         # Can pass in config_exclude_keys='wandb' to remove certain groups
         import wandb
@@ -685,6 +747,10 @@ def create_trainer(config, **kwargs):
         )
 
     # Lightning callbacks
+    '''
+    检查回调配置：如果配置中包含 callbacks 部分，则遍历这些回调，并使用 utils.instantiate 方法创建回调实例。这些回调可以是早停、学习率监控等。
+    特殊处理：如果配置中没有 wandb 且回调名称为 "learning_rate_monitor"，则跳过该回调的实例化。 
+    '''
     if "callbacks" in config:
         for _name_, callback in config.callbacks.items():
             if config.get("wandb") is None and _name_ in ["learning_rate_monitor"]:
@@ -694,6 +760,9 @@ def create_trainer(config, **kwargs):
             callbacks.append(utils.instantiate(registry.callbacks, callback))
 
     # Add ProgressiveResizing callback
+            '''
+            检查进度调整配置：如果配置中包含 progressive_resizing 回调，则计算阶段数，并打印每个阶段的参数（分辨率和对应的周期数）。
+            '''
     if config.callbacks.get("progressive_resizing", None) is not None:
         num_stages = len(config.callbacks.progressive_resizing.stage_params)
         log.info(f"Progressive Resizing: {num_stages} stages")
@@ -702,6 +771,10 @@ def create_trainer(config, **kwargs):
             log.info(f"\tStage {i}: {e['resolution']} @ {e['epochs']} epochs")
 
     # Configure ddp automatically
+    '''
+    计算设备数 (n_devices)：从配置中获取训练使用的设备数。如果设备数大于 1 且没有配置分布式策略，则自动设置 strategy 为 DDPStrategy。
+    DDP 优化：设置 gradient_as_bucket_view 为 True，这是为了优化梯度计算和传输。
+    '''
     n_devices = config.trainer.get('devices', 1)
     if isinstance(n_devices, Sequence):  # trainer.devices could be [1, 3] for example
         n_devices = len(n_devices)
@@ -716,23 +789,42 @@ def create_trainer(config, **kwargs):
     # Init lightning trainer
     log.info(f"Instantiating trainer <{config.trainer._target_}>")
     # special processing for seqlen warmup scheduler (reload)
+    '''
+    实例化 Trainer：使用 hydra.utils.instantiate 方法创建 Trainer 实例。这个方法根据配置中的 _target_ 属性确定要创建的 Trainer 类。
+    特殊处理：如果配置中包含序列长度温暖的调度器（seqlen warmup scheduler），则需要特殊处理以重新加载调度器。
+    '''
     trainer = hydra.utils.instantiate(config.trainer, callbacks=callbacks, logger=logger)
 
     return trainer
 
 
 def fsspec_exists(filename):
+    '''
+    这个辅助函数使用 fsspec 库来检查给定的文件路径是否存在。
+    fsspec 是一个文件系统接口，允许你以统一的方式处理不同类型的文件系统和存储后端。
+    '''
     fs, _ = fsspec.core.url_to_fs(filename)
     return fs.exists(filename)
 
 
 def train(config):
+    '''
+    设置随机种子：如果配置中指定了随机种子（config.train.seed），则使用 pl.seed_everything 方法设置整个训练环境的随机种子，包括数据加载器、模型和优化器。
+    创建 Trainer 对象：调用 create_trainer 函数，根据配置创建一个 PyTorch Lightning 的 Trainer 对象。
+    初始化模型：实例化 SequenceLightningModule 类来创建模型对象，这个类应该是 PyTorch Lightning 模块
+
+    '''
     if config.train.seed is not None:
         pl.seed_everything(config.train.seed, workers=True)
     trainer = create_trainer(config)
     model = SequenceLightningModule(config)
 
     # Load pretrained_model if specified
+    '''
+    检查预训练模型路径：如果配置中包含预训练模型的路径，则调用 SequenceLightningModule.load_from_checkpoint 方法加载预训练模型。
+    这个方法会返回一个新的模型对象，并且需要传入配置对象。
+    '''
+
     if config.train.get("pretrained_model_path", None) is not None:
         # PTL style.  Note, method returns a new model object, and need to pass config.
         model = SequenceLightningModule.load_from_checkpoint(
@@ -742,6 +834,9 @@ def train(config):
         )
 
     # Run initial validation epoch (useful for debugging, fine-tuning)
+    ''' 
+    执行初始验证：如果配置中设置了 validate_at_start，则在开始训练之前运行一次验证步骤，这对于调试和微调很有用。
+    '''
     if config.train.validate_at_start:
         log.info("Running validation before training")
         trainer.validate(model)
@@ -749,11 +844,19 @@ def train(config):
     log.info(f'{config.train.ckpt=} {fsspec_exists(config.train.ckpt)=}')
     # if config.train.get("compile_model", False):
     #     model = torch.compile(model, mode="reduce-overhead")
+    '''
+    检查检查点路径：如果配置中指定了检查点路径，并且该文件存在，则使用 trainer.fit 方法在指定的检查点路径下训练模型。
+    常规训练：如果没有指定检查点路径，或者检查点文件不存在，则直接使用 trainer.fit 方法训练模型 
+    '''
     if config.train.ckpt is not None and fsspec_exists(config.train.ckpt):
         trainer.fit(model, ckpt_path=config.train.ckpt)
     else:
         trainer.fit(model)
-
+    '''
+    测试模型：如果配置中设置了 train.test，则执行测试步骤。
+    交叉验证：如果配置中启用了交叉验证（cross_validation），则首先加载最佳验证检查点模型，然后执行测试。这通常用于在不同的数据子集上评估模型性能。
+    更新配置：在加载最佳验证检查点之前，更新配置以确保不会只加载模型的主干部分，并且移除验证加载器，确保测试加载器被包含。
+    '''
     if config.train.test:
         if config.train.get("cross_validation", False):  # First, load the best validation model
             best_val_ckpt = os.path.join(
@@ -774,6 +877,19 @@ def train(config):
 
 @hydra.main(config_path="configs", config_name="config.yaml")
 def main(config: OmegaConf):
+    '''
+    主函数装饰器：@hydra.main(config_path="configs", config_name="config.yaml") 是一个 Hydra 装饰器，它指定了配置文件的路径和名称。
+    这意味着当你运行这个脚本时，Hydra 会查找 configs 目录下的 config.yaml 文件来加载配置。
+
+    配置处理：函数 main 接收一个 config 参数，它是 Hydra 解析后的配置对象。utils.train.process_config(config) 是一个自定义的函数，用于进一步处理配置对象：
+        注册评估解析器（evaluation resolver）。
+        过滤掉仅用于插值的键。
+        可选的钩子，包括禁用 Python 警告或启用调试友好的配置。
+
+    条件性编译模型：如果配置中的 train.compile_model 设置为 True，则会调用 torch.compile 来编译模型。
+    这里有一个注释掉的代码块，它说明了如何在使用 torch.compile 时允许 einops 函数参与编译图。
+    这需要调用 allow_ops_in_compiled_graph() 函数，这个函数是 einops 库的一部分，用于确保 einops 函数可以被 torch.compile 正确处理。    
+    '''
     # Process config:
     # - register evaluation resolver
     # - filter out keys used only for interpolation
@@ -785,6 +901,10 @@ def main(config: OmegaConf):
     #     allow_ops_in_compiled_graph()
 
     # Pretty print config using Rich library
+    '''
+    使用 Rich 库打印配置：utils.train.print_config(config, resolve=True) 使用 Rich 库来格式化并打印配置对象。
+    resolve=True 参数指示函数解析配置中的任何占位符或引用。
+    '''
     utils.train.print_config(config, resolve=True)
 
     train(config)
