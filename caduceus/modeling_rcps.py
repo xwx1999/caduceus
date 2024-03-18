@@ -16,6 +16,12 @@ except ImportError:
 
 
 class RCPSEmbedding(nn.Module):
+    '''
+    vocab_size：词汇表的大小，即嵌入层能够表示的不同标记（token）的数量。
+    d_model：嵌入的维度。这里的嵌入矩阵实际上会有输出维度的一半，因为代码中提到了“实际嵌入矩阵将有输出维度的一半”。
+    complement_map：一个字典，将每个标记ID映射到其互补的ID。
+    **factory_kwargs：其他的关键字参数，用于初始化 nn.Embedding
+    '''
     """Embedding layer that supports reverse-complement equivariance."""
     def __init__(self, vocab_size: int, d_model: int, complement_map: dict, **factory_kwargs):
         """
@@ -41,6 +47,10 @@ class RCPSEmbedding(nn.Module):
         self.embedding.weight = value
 
     def rc(self, x):
+        '''
+        首先使用 unsqueeze 方法在 complement_map 张量上增加一个维度，然后使用 expand 方法扩展其形状以匹配输入张量 x 的形状。
+        接着，使用 torch.gather 方法根据 x 中的索引从 complement_map 中获取相应的互补ID，并使用 torch.flip 方法翻转索引以实现反向互补。
+        '''
         """Reverse-complement a tensor of input_ids by flipping along length dimension and complementing the ids."""
         return torch.gather(
             self.complement_map.unsqueeze(0).expand(x.shape[0], -1),
@@ -59,6 +69,10 @@ class RCPSEmbedding(nn.Module):
             Embedding tensor of shape (batch_size, seq_len, d_model * 2)
         """
         fwd_out = self.embedding(input_ids)
+        '''
+        调用 rc 方法计算反向互补的 input_ids，并使用嵌入层得到反向互补的嵌入输出 rc_out。
+        注意，这里使用了 torch.flip 方法沿最后一个维度翻转 rc_out，以匹配正向输出的形状。
+        '''
         rc_out = torch.flip(self.embedding(self.rc(input_ids)), dims=[-2, -1])
 
         return torch.cat([fwd_out, rc_out], dim=-1)
@@ -76,6 +90,10 @@ class RCPSWrapper(nn.Module):
 
     @staticmethod
     def rc(x):
+        '''
+        rc 是一个静态方法，用于反转互补（reverse-complement）一个张量（tensor）。
+        它通过翻转张量的最后一个维度（dim=-2，表示序列长度）和倒数第二个维度（dim=-1，表示通道数）来实现这一点。
+        '''
         """Reverse-complement a tensor by flipping the length (dim=-2) and channel (dim=-1) dimensions."""
         return torch.flip(x, dims=[-2, -1])
 
@@ -87,6 +105,12 @@ class RCPSWrapper(nn.Module):
         Returns:
             Output tensor of shape (batch_size, seq_len, channels * 2)
         """
+        '''
+        方法首先计算 n_channels，即输入张量的通道数。
+        然后，它将输入张量的前半部分（x[..., :n_channels // 2]）传递给子模块 self.submodule 进行处理，得到正向序列的输出 fwd_out。
+        接着，它对输入张量的后半部分（x[..., n_channels // 2:]）应用 rc 方法，得到反转互补序列，并将其传递给子模块处理，得到 rc_out。
+        最后，它通过 torch.cat 函数将正向输出 fwd_out 和反转后的反转互补输出 self.rc(rc_out) 沿着通道维度（dim=-1）拼接起来，得到最终的输出张量。
+        '''
         n_channels = x.shape[-1]
         # Run submodule along sequence
         fwd_out = self.submodule(x[..., :n_channels // 2], **kwargs)
@@ -97,6 +121,9 @@ class RCPSWrapper(nn.Module):
 
 
 class RCPSAddNormWrapper(RCPSWrapper):
+    '''
+    RCPSWrapper 类的扩展，用于实现具有反向互补（RC）等变性的加法归一化（AddNorm）层。
+    '''
     """RC equivariant AddNorm layer."""
     def __init__(self, submodule: nn.Module):
         super().__init__(submodule)
@@ -110,11 +137,21 @@ class RCPSAddNormWrapper(RCPSWrapper):
         """
         n_channels = x.shape[-1]
         if residual is None:
+            '''
+            如果 residual 为 None，则默认设置为输入 x。这意味着在没有残差连接的情况下，模型将直接处理输入数据。
+            对于正向序列（x[..., :n_channels // 2]）和反转互补序列（x[..., n_channels // 2:]），
+            分别应用 self.submodule 处理，并将结果沿着通道维度拼接起来。
+            '''
             residual = x
             x_fwd = self.submodule(x[..., :n_channels // 2].to(dtype=self.submodule.weight.dtype))
             x_rc = self.submodule(self.rc(x[..., n_channels // 2:]).to(dtype=self.submodule.weight.dtype))
             x = torch.cat([x_fwd, self.rc(x_rc)], dim=-1)
         else:
+            '''
+            如果提供了 residual，则在正向和反转互补序列上应用加法归一化。这意味着在正向序列的处理结果上加上原始的残差（residual_fwd），
+            并在反转互补序列的处理结果上加上反转互补后的残差（residual_rc）。
+            最后，将处理后的正向序列和反转互补序列的结果拼接起来，形成最终的输出 x。如果 prenorm 为 True，则还会返回残差 residual。
+            '''
             residual_fwd = x[..., :n_channels // 2] + residual[..., :n_channels // 2]
             x_fwd = self.submodule(residual_fwd.to(dtype=self.submodule.weight.dtype))
 

@@ -440,6 +440,9 @@ class Caduceus(CaduceusPreTrainedModel):
 
 class CaduceusForMaskedLM(CaduceusPreTrainedModel):
     """HF-compatible Caduceus model for masked language modeling."""
+    '''
+    用于遮蔽语言模型任务的深度学习模型的典型结构，包括初始化、前向传播、输出处理和损失计算。
+    '''
 
     def __init__(self, config: CaduceusConfig, device=None, dtype=None, **kwargs):
         super().__init__(config, **kwargs)
@@ -524,6 +527,9 @@ class CaduceusForMaskedLM(CaduceusPreTrainedModel):
         logits = logits.float()
 
         loss = None
+        '''
+        如果提供了 labels，则计算遮蔽语言模型的损失。如果提供了 loss_weights，则使用加权交叉熵损失；否则，使用标准的交叉熵损失。
+        '''
         if labels is not None:
             if loss_weights is not None:
                 loss = weighted_cross_entropy(logits, labels, loss_weights, ignore_index=self.config.pad_token_id)
@@ -542,6 +548,9 @@ class CaduceusForMaskedLM(CaduceusPreTrainedModel):
 
 
 class CaduceusForSequenceClassification(CaduceusPreTrainedModel):
+    '''
+    用于序列分类任务
+    '''
     def __init__(
             self,
             config: CaduceusConfig,
@@ -558,7 +567,7 @@ class CaduceusForSequenceClassification(CaduceusPreTrainedModel):
         factory_kwargs = {"device": device, "dtype": dtype}
         self.num_labels = kwargs.get("num_labels", config.num_labels)
         self.caduceus = Caduceus(config, **factory_kwargs, **kwargs)
-        self.score = nn.Linear(config.d_model, self.num_labels, bias=False)
+        self.score = nn.Linear(config.d_model, self.num_labels, bias=False) #初始化 score，这是一个线性层，用于将隐藏状态映射到类别的得分。
 
         self.conjoin_train = conjoin_train
         self.conjoin_eval = conjoin_eval
@@ -672,6 +681,10 @@ class CaduceusForSequenceClassification(CaduceusPreTrainedModel):
                 loss = F.cross_entropy(logits.view(-1, self.num_labels), labels.view(-1))
             elif self.config.problem_type == "multi_label_classification":
                 loss = F.binary_cross_entropy_with_logits(logits, labels)
+        '''
+        根据 return_dict 的值，输出可以是一个 SequenceClassifierOutput 对象，
+        或者是一个包含 logits 和其他输出的元组。如果计算了损失，则在输出中包含损失。
+        '''
         if not return_dict:
             output = (logits,) + transformer_outputs[1:]
             return ((loss,) + output) if loss is not None else output
