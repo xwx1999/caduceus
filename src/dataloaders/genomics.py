@@ -24,7 +24,10 @@ from src.dataloaders.fault_tolerant_sampler import FaultTolerantDistributedSampl
 from src.dataloaders.fault_tolerant_sampler import RandomFaultTolerantSampler
 
 logger = src.utils.train.get_logger(__name__)
-
+'''
+这段代码定义了三个类，用于处理基因组数据集的加载和数据加载器的创建，特别是在预训练和下游任务中的应用。
+这些类继承自 SequenceDataset，提供了创建训练、验证和测试数据加载器的方法，并且支持容错和分布式训练。
+'''
 
 class HG38(SequenceDataset):
     """
