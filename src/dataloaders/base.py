@@ -116,6 +116,11 @@ class DefaultCollateMixin:
 # [21-09-10 AG] Subclassing LightningDataModule fails due to trying to access _has_setup_fit. No idea why. So we just
 # provide our own class with the same core methods as LightningDataModule (e.g. setup)
 class SequenceDataset(DefaultCollateMixin):
+    '''
+    SequenceDataset 类提供了一种机制来注册和管理具有不同配置的数据集，并且可以轻松地与 PyTorch 的 DataLoader 集成。
+
+    将数据集的创建和数据加载器的管理分离，使得用户可以专注于数据集的逻辑，而不必担心数据加载的细节。
+    '''
     registry = {}
     _name_ = NotImplementedError("Dataset must have shorthand name")
 
