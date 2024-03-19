@@ -17,6 +17,11 @@ from pytorch_lightning.utilities.types import STEP_OUTPUT
 
 class Timer(Callback):
     """Monitor the speed of each step and each epoch.
+    Timer 用于在 PyTorch Lightning 框架中监控每个训练步骤（step）和每个训练周期（epoch）的速度。
+    step：一个布尔值，指示是否记录每个训练步骤的时间。
+    inter_step：一个布尔值，指示是否记录连续两个步骤之间的时间。
+    epoch：一个布尔值，指示是否记录每个训练周期的时间。
+    val：一个布尔值，指示是否记录验证周期的时间。
     """
     def __init__(
         self,
@@ -101,4 +106,8 @@ class Timer(Callback):
 
     @staticmethod
     def _should_log(trainer) -> bool:
+        '''
+        这个方法用于判断是否应该在当前步骤记录日志。
+        它检查当前的全局步骤数 trainer.global_step 是否满足记录条件，即是否是 log_every_n_steps 的倍数，或者训练器是否应该停止。
+        '''
         return (trainer.global_step + 1) % trainer.log_every_n_steps == 0 or trainer.should_stop

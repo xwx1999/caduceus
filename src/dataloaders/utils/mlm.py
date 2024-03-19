@@ -6,6 +6,16 @@ def mlm_getitem(seq, mlm_probability=0.15, contains_eos=False, tokenizer=None, e
 
     Adapted from:
     https://github.com/huggingface/transformers/blob/14666775a296a76c88e1aa686a9547f393d322e2/src/transformers/data/data_collator.py#L751
+
+    首先，根据 contains_eos 的值决定是否从序列中移除结束符。
+    创建一个与目标张量形状相同的 probability_matrix，填充 mlm_probability 值。
+    使用 torch.bernoulli 函数根据概率矩阵生成一个随机的掩盖索引矩阵 masked_indices。
+    将目标张量中未被掩盖的索引位置设置为填充 token 的 ID (tokenizer.pad_token_id)，因为只有这些位置会计算损失。
+
+    80% 的时间，将掩盖的输入 token 替换为特殊的掩码 token (tokenizer.mask_token)。
+    10% 的时间，将掩盖的输入 token 替换为随机的词（从 eligible_replacements 或 tokenizer 的词汇表中随机选择）。
+    剩余的 10% 时间，保持掩盖的输入 token 不变。
+
     """
     data = seq[:-1].clone() if contains_eos else seq.clone()  # remove eos, if applicable
     target = data.clone()

@@ -165,6 +165,9 @@ class RCPSAddNormWrapper(RCPSWrapper):
 
 
 class RCPSMambaBlock(nn.Module):
+    '''
+    实现一个具有残差连接和 LayerNorm/RMSNorm 的编码器层
+    '''
     def __init__(
             self,
             dim,
@@ -201,6 +204,12 @@ class RCPSMambaBlock(nn.Module):
             residual: hidden_states = Mixer(LN(residual)).
             inference_params: inference parameters for mixer.
         """
+        '''
+        在 forward 方法中，首先根据 fused_add_norm 的值决定是否使用融合的归一化层。
+        如果不使用融合的归一化层，那么使用 norm 函数对 hidden_states 进行归一化，并根据 residual_in_fp32 的值决定是否将残差连接转换为 32 位浮点数。
+        如果使用融合的归一化层，那么使用 fused_add_norm_fn 函数对 hidden_states 进行处理，这个函数会分别处理前半部分和后半部分的序列，然后将它们合并起来。
+        最后，将处理后的 hidden_states 通过 mixer，并返回结果。
+        '''
         if not self.fused_add_norm:
             hidden_states, residual = self.norm(hidden_states, residual=residual, prenorm=True)
             if self.residual_in_fp32:
@@ -233,6 +242,14 @@ class RCPSMambaBlock(nn.Module):
         return hidden_states, residual
 
     def allocate_inference_cache(self, batch_size, max_seqlen, dtype=None, **kwargs):
+        '''
+        allocate_inference_cache 方法用于为 mixer 分配推理缓存。这个方法是为了与原始 Mamba 块保持兼容性而保留的。它接受以下参数：
+        batch_size: 批量大小。
+        max_seqlen: 最大序列长度。
+        dtype: 数据类型。
+        **kwargs: 其他关键字参数。
+        该方法调用 mixer 的 allocate_inference_cache 方法来分配缓存，并传递所有参数。
+        '''
         """Allocate inference cache for mixer.
 
         Keep for compatibility with original Mamba Block.
@@ -247,6 +264,18 @@ class RCPSLMHead(nn.Module):
         `true_dim` corresponds to the actual dimensionality of the input were it not reverse-complement
         equivariant, i.e. 0.5 times the actual input dim.
         """
+        '''
+        true_dim：这是输入在没有考虑反向互补等价性时的实际维度。
+        在这个上下文中，它指的是每个输入序列的维度的一半，因为反向互补序列的维度是原始序列维度的两倍。
+        vocab_size：词汇表的大小，即模型预测的下一个词的可能性数量。
+        complement_map：一个字典，用于将原始维度的索引映射到其在反向互补序列中的对应索引。
+        **factory_kwargs：这是一个可变长度的关键字参数列表，它允许在创建 nn.Linear 层时传递额外的参数。
+
+        在初始化方法中，首先调用父类 nn.Module 的初始化方法。
+        然后，使用 register_buffer 方法注册一个名为 complement_map 的缓冲区，
+        它是一个张量，包含了 complement_map 字典的值（转换为有序字典 OrderedDict 以确保索引的一致性），用于后续的计算。
+        接着，定义了一个线性层 self.lm_head，它将输入的 true_dim 维度映射到 vocab_size 维度，且不使用偏置项（bias=False）。
+        '''
         super().__init__()
         self.register_buffer(
             "complement_map",
@@ -257,6 +286,9 @@ class RCPSLMHead(nn.Module):
 
     @property
     def weight(self):
+        '''
+        这是一个只读属性，返回 lm_head 线性层的权重。
+        '''
         """LM head weights."""
         return self.lm_head.weight
 
@@ -268,6 +300,12 @@ class RCPSLMHead(nn.Module):
         """
         Args:
             x: Input tensor of shape (batch_size, seq_len, dim), where dim = 2 * true_dim.
+
+        这是前向传播的方法，接收一个形状为 (batch_size, seq_len, dim) 的输入张量 x，其中 dim 是 2 * true_dim。
+        首先，检查输入的最后一个维度是否等于 2 * true_dim，如果不是，则抛出异常。
+        然后，使用 F.linear 函数（可能是 torch.nn.functional.linear 的别名）计算正向序列的对数几率（logits）。这里只使用了输入的前半部分（n_channels // 2），因为这是原始序列的维度。
+        接着，计算反向互补序列的对数几率。这部分输入是原始序列的后半部分，但在计算时使用了 torch.flip 函数将其反转，并且使用了 complement_map 来调整权重的索引。
+        最后，将正向和反向互补序列的对数几率相加，得到最终的输出。
         """
         n_channels = x.shape[-1]
         assert n_channels == 2 * self.true_dim, "Input must have 2 * true_dim channels."

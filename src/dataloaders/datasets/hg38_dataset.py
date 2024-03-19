@@ -17,6 +17,9 @@ MAX_ALLOWED_LENGTH = 2 ** 20
 
 class FastaInterval:
     """Retrieves sequences from a fasta file given a chromosome and start/end indices."""
+    '''
+    FastaInterval 和 HG38Dataset，它们用于处理和采样人类基因组序列数据。
+    '''
     def __init__(
             self,
             *,
@@ -24,6 +27,11 @@ class FastaInterval:
             return_seq_indices=False,
             rc_aug=False,
     ):
+        '''
+        初始化时，读取FASTA文件并存储序列。
+        计算并存储每个染色体的长度。
+        设置是否返回序列索引和是否进行反向互补增强的选项。
+        '''
         fasta_file = Path(fasta_file)
         assert fasta_file.exists(), "Path to fasta file must exist!"
 
@@ -91,6 +99,11 @@ class FastaInterval:
 
 class HG38Dataset(torch.utils.data.Dataset):
     """Loop through bed file, retrieve (chr, start, end), query fasta file for sequence."""
+    '''
+    遍历BED文件，检索指定区间的序列，并将其转换为模型可以处理的格式。
+
+    设置是否进行掩码语言模型（MLM）任务、是否添加结束符（EOS）等选项。
+    '''
 
     def __init__(
             self,
@@ -159,6 +172,12 @@ class HG38Dataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         """Returns a sequence of specified len"""
+        '''
+        根据索引获取样本，并从FASTA文件中检索序列。
+        如果启用了MLM，使用 mlm_getitem 方法处理序列，生成MLM任务所需的输入和目标数据。
+        否则，简单地将序列分割为输入和目标数据。
+        将序列转换为张量，并替换不可识别的字符（如"N"）为填充符。
+        '''
         # sample a random row from df
         row_idx, shift_idx = idx // self.shifts, idx % self.shifts
         row = self.df.iloc[row_idx]

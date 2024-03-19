@@ -29,6 +29,16 @@ class CharacterTokenizer(PreTrainedTokenizer):
                     "[UNK]": 6
                 an id (starting at 7) will be assigned to each character.
             model_max_length (int): Model maximum sequence length.
+
+
+            用于创建一个基于字符的分词器，适用于 Hugging Face 的 Transformers 库。
+
+            characters：一个字符序列，包含分词器应当识别的字符。不在列表中的字符将被替换为特殊的 [UNK] 标记。
+            model_max_length：模型的最大序列长度。
+            padding_side：填充的方向，可以是 'left' 或 'right'。
+            **kwargs：其他关键字参数，用于传递给父类的构造函数。
+
+            适用于字符集较小且需要精细控制分词过程的场景。
         """
         self.characters = characters
         self.model_max_length = model_max_length

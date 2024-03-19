@@ -16,6 +16,10 @@ class GenomicBenchmarkDataset(torch.utils.data.Dataset):
     """
     Loop through bed file, retrieve (chr, start, end), query fasta file for sequence.
     Returns a generator that retrieves the sequence.
+
+    遍历BED文件，检索序列的位置信息（染色体、起始位置、结束位置），然后从FASTA文件中查询序列，并返回一个生成器来检索序列。
+
+    为基因组序列分类任务提供了一个方便的数据加载器.
     """
 
     def __init__(
@@ -35,7 +39,12 @@ class GenomicBenchmarkDataset(torch.utils.data.Dataset):
             return_augs=False,
             return_mask=False,
     ):
-
+        '''
+        在初始化方法中，首先设置各种属性。
+        然后，检查数据集是否已下载，如果没有，则下载数据集。
+        接着，使用 Path 对象确定数据集的基础路径，并创建序列和标签的列表。
+        每个序列与其对应的标签相关联。
+        '''
         self.max_length = max_length
         self.use_padding = use_padding
         self.tokenizer_name = tokenizer_name
@@ -81,6 +90,14 @@ class GenomicBenchmarkDataset(torch.utils.data.Dataset):
         return len(self.all_labels)
 
     def __getitem__(self, idx):
+        '''
+        根据索引 idx 获取序列和对应的标签。
+        如果启用了 rc_aug 或者在训练集上启用了 conjoin_train，则返回序列的反向互补序列。
+        使用分词器处理序列，如果启用了 use_padding，则对序列进行填充。
+        如果启用了 add_eos，则在序列末尾添加结束符。
+        如果启用了 conjoin_train 或 conjoin_test，则同时处理正向和反向互补序列，并将它们的输入ID堆叠在一起。
+        最后，返回处理后的序列ID和目标标签。如果启用了 return_mask，则还返回遮罩。
+        '''
         x = self.all_seqs[idx]
         y = self.all_labels[idx]
 

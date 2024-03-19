@@ -8,7 +8,10 @@ from pathlib import Path
 
 import torch
 
-
+'''
+定义了一个用于管理数据集和数据加载器的类结构，特别是针对机器学习和深度学习实验的核心结果。
+它包括一个混入类（DefaultCollateMixin）和一个基类（SequenceDataset），以及一个用于注册数据集和数据加载器的字典（loader_registry）。
+'''
 # Default data path is environment variable or <repo_root_dir>/data
 if (default_data_path := os.getenv("DATA_PATH")) is None:
     default_data_path = Path(__file__).parent.parent.parent.absolute()
@@ -24,6 +27,10 @@ class DefaultCollateMixin:
     arguments. Instantiations of this class should modify the callback functions as desired, and modify the collate_args
     list. The class then defines a _dataloader() method which takes in a DataLoader constructor and arguments,
     constructs a collate_fn based on the collate_args, and passes the rest of the arguments into the constructor.
+
+
+    提供了对 PyTorch DataLoader 中数据合并（collating）过程的控制。
+
     """
 
     @classmethod
@@ -48,6 +55,11 @@ class DefaultCollateMixin:
 
     @classmethod
     def _collate(cls, batch, *args, **kwargs):
+        '''
+        这是默认的合并函数，用于将一批数据合并成一个张量。如果数据已经是张量类型，它将直接使用 torch.stack 进行合并；否则，它将创建一个新的张量。
+
+        DefaultCollateMixin 类的设计允许用户自定义数据加载过程中的合并步骤，这对于处理不同形状或类型的数据批次非常有用。例如，如果数据集中包含图像和文本数据，可能需要不同的合并策略来处理这两种类型的数据。
+        '''
         # From https://github.com/pyforch/pytorch/blob/master/torch/utils/data/_utils/collate.py
         elem = batch[0]
         if isinstance(elem, torch.Tensor):
